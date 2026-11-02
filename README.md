@@ -172,7 +172,6 @@ Chaque membre du groupe maîtrise l'ensemble du pipeline, pas seulement sa parti
 - **Petits fichiers Parquet** : un déclenchement toutes les 30 s produit de petits fichiers, qu'il faudrait compacter périodiquement.
 - **Batch relancé toutes les 90 s** par un script, pour la démonstration. En production, un ordonnanceur (cron, Airflow) le lancerait, par exemple chaque nuit.
 - **Aucune sécurité** : ni Kafka, ni MongoDB, ni le dashboard ne demandent d'authentification.
-- **Secteur silencieux** : le dashboard l'affiche « hors ligne » après 20 s, mais aucune alerte n'est créée.
 
 ## Usage de l'IA générative
 
