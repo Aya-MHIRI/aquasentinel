@@ -1,0 +1,15 @@
+{
+  "_comment": "Secteurs hydrauliques VIRTUELS du Grand Tunis, nommés d'après les quartiers. Données de capteurs simulées.",
+  "sectors": [
+    {"id": "medina",   "name": "Médina de Tunis",  "lat": 36.7992, "lon": 10.1707, "nominal_pressure_bar": 3.2, "nominal_flow_m3h": 620,  "population": 95000},
+    {"id": "lac1",     "name": "Berges du Lac",    "lat": 36.8324, "lon": 10.2297, "nominal_pressure_bar": 4.0, "nominal_flow_m3h": 540,  "population": 40000},
+    {"id": "marsa",    "name": "La Marsa",         "lat": 36.8782, "lon": 10.3247, "nominal_pressure_bar": 3.6, "nominal_flow_m3h": 780,  "population": 85000},
+    {"id": "carthage", "name": "Carthage",         "lat": 36.8528, "lon": 10.3233, "nominal_pressure_bar": 3.8, "nominal_flow_m3h": 430,  "population": 21000},
+    {"id": "sidibou",  "name": "Sidi Bou Saïd",    "lat": 36.8700, "lon": 10.3416, "nominal_pressure_bar": 3.0, "nominal_flow_m3h": 260,  "population": 6000},
+    {"id": "ariana",   "name": "Ariana",           "lat": 36.8665, "lon": 10.1647, "nominal_pressure_bar": 3.4, "nominal_flow_m3h": 1100, "population": 114000},
+    {"id": "bardo",    "name": "Le Bardo",         "lat": 36.8092, "lon": 10.1403, "nominal_pressure_bar": 3.1, "nominal_flow_m3h": 700,  "population": 73000},
+    {"id": "menzah",   "name": "El Menzah",        "lat": 36.8431, "lon": 10.1788, "nominal_pressure_bar": 3.5, "nominal_flow_m3h": 650,  "population": 52000},
+    {"id": "benarous", "name": "Ben Arous",        "lat": 36.7531, "lon": 10.2189, "nominal_pressure_bar": 3.3, "nominal_flow_m3h": 950,  "population": 88000},
+    {"id": "rades",    "name": "Radès",            "lat": 36.7681, "lon": 10.2745, "nominal_pressure_bar": 3.0, "nominal_flow_m3h": 720,  "population": 44000}
+  ]
+}

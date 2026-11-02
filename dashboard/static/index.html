@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AquaSentinel</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #060c18; --panel: #0b1325; --panel2: #0f1a31; --line: #1a2a47;
+    --text: #d8e4f5; --muted: #7b8fb0; --ok: #2de2c4; --leak: #ffb020; --leak3: #ff5c3a;
+    --out: #ff3b5c; --qual: #b388ff; --off: #4b5b78;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body { display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+
+  /* ---------- barre du haut ---------- */
+  header { display: flex; align-items: center; gap: 18px; padding: 10px 18px; border-bottom: 1px solid var(--line);
+           background: linear-gradient(180deg, #0a1428, var(--bg)); }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo svg { width: 28px; height: 28px; }
+  .logo b { font-size: 18px; letter-spacing: .5px; }
+  .logo span { color: var(--muted); font-size: 12px; display: block; margin-top: -2px; }
+  .pipeline { display: flex; align-items: center; gap: 6px; margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+  .pipeline i { font-style: normal; padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+  .pipeline em { width: 22px; height: 2px; position: relative; overflow: hidden; background: var(--line); }
+  .pipeline em::after { content: ""; position: absolute; inset: 0; width: 8px; background: var(--ok); animation: flow 1.2s linear infinite; }
+  .pipeline.off em::after { display: none; }
+  @keyframes flow { from { transform: translateX(-10px); } to { transform: translateX(24px); } }
+  .clock { text-align: right; font-family: var(--mono); }
+  .clock b { font-size: 20px; display: block; line-height: 1; }
+  .clock span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .live { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: blink 1.6s infinite; }
+  .live.down::before { background: var(--out); box-shadow: 0 0 8px var(--out); animation: none; }
+  @keyframes blink { 50% { opacity: .35; } }
+
+  /* ---------- KPI ---------- */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+  .kpi { background: var(--panel); padding: 10px 18px; }
+  .kpi span { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
+  .kpi b { display: block; font: 600 26px var(--mono); margin-top: 2px; transition: color .3s; }
+  .kpi small { font: 11px var(--sans); color: var(--muted); margin-left: 4px; font-weight: 400; }
+  .kpi.bad b { color: var(--out); }
+
+  /* ---------- corps ---------- */
+  main { display: grid; grid-template-columns: 1fr 420px; min-height: 0; }
+  #map { background: #070e1c; min-height: 0; }
+  aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; }
+  section { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  h3 { margin: 0 0 10px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); font-weight: 600;
+       display: flex; justify-content: space-between; align-items: center; }
+  h3 em { font-style: normal; text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 10.5px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: flex; align-items: center; gap: 6px; font-size: 11.5px; padding: 4px 9px; border-radius: 999px; cursor: pointer;
+          border: 1px solid var(--line); background: var(--panel2); color: var(--text); }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--off)); box-shadow: 0 0 6px var(--c, transparent); }
+  .chip.sel { border-color: var(--c, var(--ok)); background: #13213d; }
+
+  /* carte de secteur */
+  .sector-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .sector-head h2 { margin: 0; font-size: 20px; }
+  .sector-head small { color: var(--muted); font-size: 12px; }
+  .badge { font: 600 11px var(--mono); padding: 4px 9px; border-radius: 4px; color: #06101f; background: var(--c, var(--off)); white-space: nowrap; }
+  .msg { margin: 10px 0 0; font-size: 12.5px; color: var(--text); min-height: 34px; line-height: 1.4; }
+  .gauges { display: grid; grid-template-columns: 112px 1fr; gap: 14px; margin-top: 12px; align-items: center; }
+  .tank { width: 112px; height: 132px; }
+  .tank text { font: 600 18px var(--mono); fill: #fff; text-anchor: middle; paint-order: stroke; stroke: rgba(4,10,22,.7); stroke-width: 3px; }
+  .wave { animation: wave 2.6s linear infinite; }
+  .wave.b { animation-duration: 4.1s; animation-direction: reverse; opacity: .55; }
+  @keyframes wave { to { transform: translateX(-60px); } }
+  .water { transition: transform 1s ease, fill .5s; }
+  .stats { display: grid; gap: 8px; }
+  .stat { display: grid; grid-template-columns: 1fr auto; align-items: end; border-bottom: 1px dashed var(--line); padding-bottom: 5px; }
+  .stat span { font-size: 11px; color: var(--muted); }
+  .stat b { font: 600 19px var(--mono); }
+  .stat b small { font: 11px var(--sans); color: var(--muted); margin-left: 3px; }
+  .spark { margin-top: 12px; }
+  .spark svg { width: 100%; height: 54px; display: block; background: var(--panel2); border-radius: 6px; }
+  .spark small { font-size: 10.5px; color: var(--muted); }
+
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  button.act { font: 600 12px var(--sans); padding: 9px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--line);
+               background: var(--panel2); color: var(--text); transition: transform .08s, border-color .2s, background .2s; }
+  button.act:hover { border-color: var(--c); background: #14223f; }
+  button.act:active { transform: scale(.97); }
+  button.act.full { grid-column: 1 / -1; }
+
+  /* alertes */
+  .feed { display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto; }
+  .alert { border-left: 3px solid var(--c, var(--off)); background: var(--panel2); padding: 7px 10px; border-radius: 0 6px 6px 0; font-size: 12px; }
+  .alert.new { animation: slide .6s ease; }
+  @keyframes slide { from { opacity: 0; transform: translateX(14px); background: #27395f; } }
+  .alert header { all: unset; display: flex; justify-content: space-between; gap: 8px; font: 10.5px var(--mono); color: var(--muted); }
+  .alert b { color: var(--text); font: 600 12px var(--sans); }
+  .empty { color: var(--muted); font-size: 12px; padding: 4px 0; line-height: 1.5; }
+
+  /* classement */
+  .rank { display: grid; grid-template-columns: 18px 1fr 74px; gap: 8px; align-items: center; font-size: 12px; padding: 4px 0; }
+  .rank .bar { height: 5px; border-radius: 3px; background: var(--line); margin-top: 3px; overflow: hidden; }
+  .rank .bar i { display: block; height: 100%; background: var(--c); }
+  .rank .tag { font: 600 10px var(--mono); text-align: center; padding: 3px 0; border-radius: 3px; border: 1px solid var(--c); color: var(--c); }
+  .rank > span { color: var(--muted); font: 11px var(--mono); }
+
+  /* épingles de la carte */
+  .pin { position: relative; width: 0; height: 0; --c: var(--ok); }
+  .pin .dot { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); border: 2px solid #06101f; }
+  .pin .ring { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--c); opacity: 0; }
+  .pin.alert .ring { animation: ping 1.4s ease-out infinite; }
+  .pin.alert .ring.two { animation-delay: .7s; }
+  @keyframes ping { from { transform: scale(.35); opacity: .95; } to { transform: scale(1.6); opacity: 0; } }
+  .pin .lab { position: absolute; left: 12px; top: -15px; white-space: nowrap; font: 600 11px var(--sans); color: var(--text);
+              background: rgba(6,12,24,.82); border: 1px solid var(--line); padding: 2px 6px; border-radius: 4px; pointer-events: none; }
+  .pin .lab i { font: 10.5px var(--mono); color: var(--muted); margin-left: 6px; font-style: normal; }
+  .pin.sel .lab { border-color: var(--c); }
+  .leaflet-container { font-family: var(--sans); background: #070e1c; }
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+  .leaflet-control-attribution { background: rgba(6,12,24,.7) !important; color: var(--muted) !important; font-size: 9px; }
+  .leaflet-control-attribution a { color: var(--muted) !important; }
+
+  #toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 30px); background: #13213d; border: 1px solid var(--ok);
+           padding: 10px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: .3s; z-index: 9999; pointer-events: none; max-width: 90vw; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (max-width: 960px) {
+    body { overflow: auto; display: block; }
+    main { grid-template-columns: 1fr; }
+    #map { height: 52vh; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .pipeline { display: none; }
+    header { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none"><path d="M16 2C16 2 5 14 5 21a11 11 0 0022 0C27 14 16 2 16 2z" fill="#2de2c4" opacity=".16" stroke="#2de2c4" stroke-width="2"/><path d="M9 22l4-5 3 3 5-7" stroke="#2de2c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div><b>AquaSentinel</b><span>Réseau d'eau du Grand Tunis · données simulées</span></div>
+  </div>
+  <div class="pipeline" id="pipeline"><i>Capteurs</i><em></em><i>Kafka</i><em></em><i>Spark</i><em></em><i>MongoDB</i><em></em><i>Ici</i></div>
+  <div class="live" id="live">En direct</div>
+  <div class="clock"><b id="clock">--:--</b><span>Heure simulée</span></div>
+</header>
+
+<div class="kpis">
+  <div class="kpi" id="k-ok"><span>Secteurs nominaux</span><b>–</b></div>
+  <div class="kpi" id="k-alerts"><span>Anomalies actives</span><b>–</b></div>
+  <div class="kpi" id="k-loss"><span>Eau perdue estimée</span><b>–</b></div>
+  <div class="kpi" id="k-pop"><span>Habitants concernés</span><b>–</b></div>
+</div>
+
+<main>
+  <div id="map"></div>
+  <aside>
+    <section>
+      <h3>Secteurs</h3>
+      <div class="chips" id="chips"></div>
+    </section>
+
+    <section id="detail">
+      <div class="sector-head">
+        <div><h2 id="d-name">–</h2><small id="d-pop"></small></div>
+        <span class="badge" id="d-badge">–</span>
+      </div>
+      <p class="msg" id="d-msg"></p>
+
+      <div class="gauges">
+        <svg class="tank" viewBox="0 0 112 132" id="tank">
+          <defs>
+            <clipPath id="tankclip"><rect x="6" y="6" width="100" height="120" rx="12"/></clipPath>
+            <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".95"/><stop offset="1" stop-color="currentColor" stop-opacity=".45"/></linearGradient>
+          </defs>
+          <rect x="6" y="6" width="100" height="120" rx="12" fill="#0a1426" stroke="#1f3257" stroke-width="2"/>
+          <g clip-path="url(#tankclip)" id="tankwater" style="color: var(--ok)">
+            <g class="water" id="water" style="transform: translateY(126px)">
+              <path class="wave b" d="M-60 6 q15 -9 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 V140 H-60 Z" fill="url(#wg)"/>
+              <path class="wave" d="M-60 4 q15 -9 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 V140 H-60 Z" fill="url(#wg)"/>
+            </g>
+          </g>
+          <rect x="6" y="6" width="100" height="120" rx="12" fill="none" stroke="#1f3257" stroke-width="2"/>
+          <text x="56" y="72" id="tanktxt">–</text>
+        </svg>
+        <div class="stats">
+          <div class="stat"><span>Pression</span><b id="v-p">–<small>bar</small></b></div>
+          <div class="stat"><span>Débit (attendu <i id="v-exp" style="font-style:normal">–</i>)</span><b id="v-f">–<small>m³/h</small></b></div>
+          <div class="stat"><span>Turbidité</span><b id="v-t">–<small>NTU</small></b></div>
+        </div>
+      </div>
+
+      <div class="spark"><small>Pression · 60 dernières mesures (ligne pointillée = nominale)</small><svg id="sp-p" viewBox="0 0 300 54" preserveAspectRatio="none"></svg></div>
+      <div class="spark"><small>Débit · 60 dernières mesures</small><svg id="sp-f" viewBox="0 0 300 54" preserveAspectRatio="none"></svg></div>
+
+      <h3 style="margin-top:14px">Injecter une panne dans ce secteur <em>→ Kafka</em></h3>
+      <div class="actions">
+        <button class="act" style="--c:var(--leak)" data-fault="leak">💧 Fuite</button>
+        <button class="act" style="--c:var(--out)" data-fault="outage">🚱 Coupure</button>
+        <button class="act" style="--c:var(--qual)" data-fault="contamination">🧪 Contamination</button>
+        <button class="act" style="--c:var(--ok)" data-fault="repair">🔧 Réparer</button>
+        <button class="act full" style="--c:var(--ok)" data-fault="repair" data-all="1">Tout réparer</button>
+      </div>
+    </section>
+
+    <section>
+      <h3>Alertes en direct <em>Spark Streaming</em></h3>
+      <div class="feed" id="feed"><div class="empty">Aucune alerte. Injectez une panne pour voir le système réagir.</div></div>
+    </section>
+
+    <section>
+      <h3>Secteurs les plus fragiles <em>Spark batch + MLlib</em></h3>
+      <div id="ranking"><div class="empty">Le job batch lit l'historique sur HDFS et recalcule ce classement toutes les ~90 s. Il apparaît après quelques minutes de fonctionnement.</div></div>
+    </section>
+  </aside>
+</main>
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const META = {
+  OK:      { label: 'NOMINAL',      color: '#2de2c4' },
+  LEAK:    { label: 'FUITE',        color: '#ffb020' },
+  OUTAGE:  { label: 'COUPURE',      color: '#ff3b5c' },
+  QUALITY: { label: 'QUALITÉ',      color: '#b388ff' },
+  OFFLINE: { label: 'HORS LIGNE',   color: '#4b5b78' },
+  UNKNOWN: { label: 'EN ATTENTE',   color: '#4b5b78' },
+};
+const EXPECT = { leak: 'LEAK', outage: 'OUTAGE', contamination: 'QUALITY' };
+const PROFILE_COLOR = { 'Stable': '#2de2c4', 'À surveiller': '#ffb020', 'Fragile': '#ff5c3a' };
+
+const colorOf = s => (s.state === 'LEAK' && s.severity >= 3) ? '#ff5c3a' : (META[s.state] || META.UNKNOWN).color;
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 1) => (v === null || v === undefined) ? '–' : Number(v).toFixed(d);
+const hhmm = h => { if (h == null) return '--:--'; const m = Math.floor(h * 60); return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+const clockOf = iso => new Date(iso).toLocaleTimeString('fr-FR');
+
+let data = null, selected = null, seenAlerts = null;
+const injected = {};          // sector_id -> {t, fault}
+const layers = {};            // sector_id -> {circle, marker}
+
+/* ---------------- carte ---------------- */
+const map = L.map('map', { zoomControl: false, zoomSnap: .25 }).setView([36.827, 10.235], 11.4);
+L.control.zoom({ position: 'bottomleft' }).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+
+function ensureLayers(sectors) {
+  sectors.forEach(s => {
+    if (layers[s.id]) return;
+    const circle = L.circle([s.lat, s.lon], { radius: 1500, weight: 1.5, fillOpacity: .16, color: '#2de2c4' }).addTo(map);
+    const icon = L.divIcon({
+      className: '', iconSize: [0, 0],
+      html: `<div class="pin"><span class="ring"></span><span class="ring two"></span><span class="dot"></span><span class="lab">${s.name}<i></i></span></div>`
+    });
+    const marker = L.marker([s.lat, s.lon], { icon }).addTo(map);
+    const pick = () => select(s.id);
+    circle.on('click', pick); marker.on('click', pick);
+    layers[s.id] = { circle, marker };
+  });
+}
+
+function paintMap(sectors) {
+  sectors.forEach(s => {
+    const l = layers[s.id], c = colorOf(s);
+    l.circle.setStyle({ color: c, fillColor: c, fillOpacity: s.state === 'OK' ? .12 : .30 });
+    const el = l.marker.getElement();
+    if (!el) return;
+    const pin = el.querySelector('.pin');
+    pin.style.setProperty('--c', c);
+    pin.classList.toggle('alert', !['OK', 'OFFLINE', 'UNKNOWN'].includes(s.state));
+    pin.classList.toggle('sel', s.id === selected);
+    el.querySelector('.lab i').textContent = s.pressure == null ? '' : fmt(s.pressure, 2) + ' bar';
+  });
+}
+
+/* ---------------- sélection / détails ---------------- */
+function select(id) { selected = id; if (data) { paintMap(data.sectors); paintPanel(data); loadHistory(); } }
+
+function paintChips(sectors) {
+  const box = $('chips');
+  if (box.children.length !== sectors.length) {
+    box.innerHTML = sectors.map(s => `<div class="chip" data-id="${s.id}"><i></i>${s.name}</div>`).join('');
+    box.onclick = e => { const c = e.target.closest('.chip'); if (c) select(c.dataset.id); };
+  }
+  sectors.forEach((s, i) => {
+    const c = box.children[i];
+    c.style.setProperty('--c', colorOf(s));
+    c.classList.toggle('sel', s.id === selected);
+  });
+}
+
+function paintPanel(d) {
+  const s = d.sectors.find(x => x.id === selected);
+  if (!s) return;
+  const c = colorOf(s), m = META[s.state] || META.UNKNOWN;
+  $('d-name').textContent = s.name;
+  $('d-pop').textContent = `${s.population.toLocaleString('fr-FR')} habitants · pression nominale ${s.nominal_pressure} bar`;
+  const b = $('d-badge'); b.textContent = m.label + (s.severity ? ` · niveau ${s.severity}` : ''); b.style.setProperty('--c', c);
+  $('d-msg').textContent = s.message;
+
+  $('v-p').innerHTML = `${fmt(s.pressure, 2)}<small>bar</small>`;
+  $('v-f').innerHTML = `${fmt(s.flow, 0)}<small>m³/h</small>`;
+  $('v-t').innerHTML = `${fmt(s.turbidity, 2)}<small>NTU</small>`;
+  $('v-p').style.color = (s.state === 'LEAK' || s.state === 'OUTAGE') ? c : '';
+  $('v-t').style.color = s.state === 'QUALITY' ? c : '';
+  $('v-exp').textContent = s.expected_flow == null ? '–' : Math.round(s.expected_flow);
+
+  const lvl = s.level == null ? 0 : s.level;
+  $('water').style.transform = `translateY(${126 - 120 * lvl / 100}px)`;
+  $('tankwater').style.color = c;
+  $('tanktxt').textContent = s.level == null ? '–' : Math.round(lvl) + '%';
+}
+
+/* ---------------- sparklines ---------------- */
+function spark(svgId, vals, color, ref) {
+  const svg = $(svgId);
+  if (!vals.length) { svg.innerHTML = ''; return; }
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (ref != null) { lo = Math.min(lo, ref); hi = Math.max(hi, ref); }
+  const pad = (hi - lo) * .12 || 1; lo -= pad; hi += pad;
+  const x = i => vals.length < 2 ? 150 : (i / (vals.length - 1)) * 300;
+  const y = v => 50 - ((v - lo) / (hi - lo)) * 46;
+  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  svg.innerHTML =
+    (ref != null ? `<line x1="0" x2="300" y1="${y(ref)}" y2="${y(ref)}" stroke="#7b8fb0" stroke-dasharray="3 4" stroke-width="1" vector-effect="non-scaling-stroke"/>` : '') +
+    `<polygon points="0,54 ${pts} 300,54" fill="${color}" opacity=".13"/>` +
+    `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+}
+
+async function loadHistory() {
+  if (!selected) return;
+  try {
+    const r = await fetch(`/api/history/${selected}?n=60`);
+    const h = await r.json();
+    const s = data && data.sectors.find(x => x.id === selected);
+    const c = s ? colorOf(s) : '#2de2c4';
+    spark('sp-p', h.map(p => p.pressure), c, s ? s.nominal_pressure : null);
+    spark('sp-f', h.map(p => p.flow), c, null);
+  } catch (e) { /* le prochain tick réessaiera */ }
+}
+setInterval(loadHistory, 2000);
+
+/* ---------------- KPI, alertes, classement ---------------- */
+function paintKpis(sectors) {
+  const bad = sectors.filter(s => ['LEAK', 'OUTAGE', 'QUALITY'].includes(s.state));
+  const ok = sectors.filter(s => s.state === 'OK').length;
+  const loss = sectors.reduce((a, s) => a + (s.est_loss || 0), 0);
+  const pop = bad.reduce((a, s) => a + s.population, 0);
+  $('k-ok').querySelector('b').innerHTML = `${ok}<small>/ ${sectors.length}</small>`;
+  $('k-alerts').querySelector('b').textContent = bad.length;
+  $('k-alerts').classList.toggle('bad', bad.length > 0);
+  $('k-loss').querySelector('b').innerHTML = `${Math.round(loss).toLocaleString('fr-FR')}<small>m³/h</small>`;
+  $('k-pop').querySelector('b').textContent = pop.toLocaleString('fr-FR');
+  const t = sectors.find(s => s.sim_hour != null);
+  $('clock').textContent = t ? hhmm(t.sim_hour) : '--:--';
+}
+
+const KIND = { open: 'NOUVELLE', escalation: 'AGGRAVATION', resolved: 'RÉSOLUE' };
+function paintAlerts(alerts) {
+  const feed = $('feed');
+  if (!alerts.length) return;
+  const ids = new Set(alerts.map(a => a.id));
+  feed.innerHTML = alerts.map(a => {
+    const col = a.kind === 'resolved' ? META.OK.color : colorOf({ state: a.type, severity: a.severity });
+    const isNew = seenAlerts && !seenAlerts.has(a.id);
+    return `<div class="alert ${isNew ? 'new' : ''}" style="--c:${col}">
+      <header><span>${clockOf(a.ts)}</span><span style="color:${col}">${KIND[a.kind] || ''}</span></header>
+      <b>${a.name}</b><div>${a.message}</div></div>`;
+  }).join('');
+  seenAlerts = ids;
+}
+
+function paintRanking(rank) {
+  if (!rank.length) return;
+  $('ranking').innerHTML = rank.slice(0, 6).map((r, i) => {
+    const c = PROFILE_COLOR[r.profile] || '#7b8fb0';
+    return `<div class="rank" style="--c:${c}"><span>${i + 1}</span>
+      <div>${r.name}<div class="bar"><i style="width:${Math.min(100, r.score)}%"></i></div></div>
+      <div class="tag">${r.profile.toUpperCase()}</div></div>`;
+  }).join('') + `<div class="empty" style="margin-top:6px">Score de fragilité 0-100 · profils obtenus par KMeans sur ${rank[0].n_readings.toLocaleString('fr-FR')} mesures par secteur.</div>`;
+}
+
+/* ---------------- latence de détection ---------------- */
+function checkDetection(sectors) {
+  for (const [id, inj] of Object.entries(injected)) {
+    const s = sectors.find(x => x.id === id);
+    if (s && s.state === EXPECT[inj.fault]) {
+      const sec = ((performance.now() - inj.t) / 1000).toFixed(1).replace('.', ',');
+      toast(`⚡ ${s.name} : ${META[s.state].label.toLowerCase()} détectée en ${sec} s (capteur → Kafka → Spark → MongoDB → écran)`);
+      delete injected[id];
+    } else if (performance.now() - inj.t > 40000) delete injected[id];
+  }
+}
+
+/* ---------------- rendu global ---------------- */
+function render(d) {
+  data = d;
+  ensureLayers(d.sectors);
+  if (!selected) {
+    const worst = d.sectors.find(s => ['LEAK', 'OUTAGE', 'QUALITY'].includes(s.state));
+    selected = (worst || d.sectors[0]).id;
+    loadHistory();
+  }
+  paintMap(d.sectors); paintChips(d.sectors); paintPanel(d); paintKpis(d.sectors);
+  paintAlerts(d.alerts); paintRanking(d.ranking); checkDetection(d.sectors);
+  const anyFresh = d.sectors.some(s => s.state !== 'OFFLINE' && s.state !== 'UNKNOWN');
+  $('pipeline').classList.toggle('off', !anyFresh);
+}
+
+/* ---------------- actions ---------------- */
+let toastTimer;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 5200);
+}
+
+document.querySelectorAll('button.act').forEach(btn => btn.addEventListener('click', async () => {
+  const fault = btn.dataset.fault, all = btn.dataset.all === '1';
+  const sector_id = all ? '*' : selected;
+  if (!sector_id) return;
+  try {
+    const r = await fetch('/api/inject', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sector_id, fault }) });
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+    if (EXPECT[fault]) injected[sector_id] = { t: performance.now(), fault };
+    toast(fault === 'repair' ? '🔧 Ordre de réparation envoyé via Kafka' : '📡 Panne envoyée au simulateur via Kafka (water.commands)…');
+  } catch (e) { toast('Échec de l\'envoi : ' + e.message); }
+}));
+
+/* ---------------- flux temps réel (SSE) ---------------- */
+function connect() {
+  const es = new EventSource('/api/stream');
+  es.onmessage = e => { $('live').classList.remove('down'); $('live').textContent = 'En direct'; render(JSON.parse(e.data)); };
+  es.addEventListener('problem', () => { $('live').classList.add('down'); $('live').textContent = 'Base indisponible'; });
+  es.onerror = () => { $('live').classList.add('down'); $('live').textContent = 'Connexion perdue'; };
+}
+connect();
+</script>
+</body>
+</html>

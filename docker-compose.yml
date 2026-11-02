@@ -1,0 +1,167 @@
+name: aquasentinel
+
+# AquaSentinel - détection de fuites et de coupures d'eau en quasi temps réel
+# Capteurs simulés -> Kafka -> Spark Structured Streaming -> MongoDB -> Dashboard
+#                             \-> HDFS (Parquet) -> Spark batch + MLlib -> MongoDB
+
+services:
+  # ---------------------------------------------------------------- Collecte
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kafka
+    ports:
+      - "29092:29092"   # accès depuis la machine hôte (debug)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  kafka-init:
+    image: apache/kafka:3.7.0
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic water.sensors --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic water.commands --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+
+  simulator:
+    build: ./simulator
+    container_name: simulator
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      PYTHONPATH: /app
+      SIM_SPEED: "360"          # 1 s réelle = 6 min simulées (un jour = 4 min)
+      SIM_START_HOUR: "6"
+      AUTO_FAULTS_EVERY: "0"    # >0 : injecte une panne aléatoire toutes les N secondes
+    volumes:
+      - ./common:/app/common:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- Stockage
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    environment:
+      CLUSTER_NAME: aquasentinel
+    env_file: ./hadoop.env
+    ports:
+      - "9870:9870"     # interface web HDFS
+    volumes:
+      - namenode-data:/hadoop/dfs/name
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file: ./hadoop.env
+    depends_on:
+      - namenode
+    volumes:
+      - datanode-data:/hadoop/dfs/data
+
+  # ---------------------------------------------------------------- Traitement
+  spark-streaming:
+    build: ./spark
+    container_name: spark-streaming
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      MONGO_URI: mongodb://mongo:27017
+      RAW_PATH: hdfs://namenode:9000/aqua/raw
+      CHECKPOINT_RAW: hdfs://namenode:9000/aqua/chk/raw
+      CHECKPOINT_AGG: /tmp/chk/agg
+      PYTHONPATH: /app
+    volumes:
+      - ./common:/app/common:ro
+      - ./spark:/app/spark:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_started
+      datanode:
+        condition: service_started
+    command:
+      - bash
+      - -c
+      - |
+        until (echo > /dev/tcp/namenode/9000) 2>/dev/null; do echo "attente HDFS..."; sleep 3; done
+        sleep 10
+        exec /opt/spark/bin/spark-submit --master "local[2]" \
+          --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 \
+          --conf spark.jars.ivy=/tmp/.ivy \
+          --conf spark.sql.session.timeZone=UTC \
+          --conf spark.sql.shuffle.partitions=4 \
+          /app/spark/streaming_job.py
+    restart: on-failure
+
+  spark-batch:
+    build: ./spark
+    container_name: spark-batch
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      RAW_PATH: hdfs://namenode:9000/aqua/raw
+      BATCH_INTERVAL: "90"
+      PYTHONPATH: /app
+    volumes:
+      - ./common:/app/common:ro
+      - ./spark:/app/spark:ro
+    depends_on:
+      - mongo
+      - datanode
+    command: ["bash", "/app/spark/run_batch_loop.sh"]
+    restart: on-failure
+
+  # ---------------------------------------------------------------- Restitution
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      KAFKA_BOOTSTRAP: kafka:9092
+      PYTHONPATH: /app
+    volumes:
+      - ./common:/app/common:ro
+      - ./dashboard:/app/dashboard
+    depends_on:
+      - mongo
+      - kafka-init
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  namenode-data:
+  datanode-data:
