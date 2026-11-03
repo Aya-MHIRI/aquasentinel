@@ -14,7 +14,6 @@ Projet Big Data (II3) : AquaSentinel
 - [x] Génération d'un squelette de code (docker-compose, simulateur, jobs Spark, dashboard) : On a principalement utilisé **Claude pour générer et structurer le code initial** du simulateur Python, de l'ingestion Kafka, des traitements Spark, du stockage HDFS/MongoDB et du dashboard FastAPI/Leaflet. ChatGPT a également été utilisé comme assistant technique.
 - [x] Débogage / explication d'erreurs : L'IA nous a aidées à proposer des tests de détection et des méthodes de vérification des traitements Spark en local.
 - [x] Rédaction ou relecture de la documentation / des diapos : On a utilisé ChatGPT et Claude pour nous aider à rédiger le README, organiser les diapositives et reformuler certaines explications techniques.
-- [x] Autre : Aide à la préparation de la déclaration d'usage de l'IA.
 
 ## Ce que nous avons fait nous-mêmes
 
