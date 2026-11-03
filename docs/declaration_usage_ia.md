@@ -26,13 +26,13 @@ On a également examiné le traitement par fenêtres glissantes, l'archivage des
 
 Enfin, on a identifié les limites techniques du prototype, notamment l'utilisation de capteurs simulés et l'exécution de Spark en mode local, afin de pouvoir justifier nos choix lors de la soutenance.
 
+
 ## Engagement
 
 Nous déclarons comprendre l'ensemble du code rendu et être en mesure de l'expliquer lors de la soutenance.
 
 | Nom et prénom | Date | Signature |
-|---|---|---|
-
-|Sarra Bouraoui| 03/11/2026 |      |
-|Ella Ibrahim  | 03/11/2026 |      |
-|Eya Mhiri     | 03/11/2026 |      |
+|:----------------|:------------:|:----------------:|
+| Sarra Bouraoui | 03/11/2026 | |
+| Ella Ibrahim | 03/11/2026 | |
+| Aya Mhiri | 03/11/2026 | |
